@@ -1,2 +1,3 @@
-EXEC Sp_Execute_Cube_Fact_Data_Flow;
+-- Adiciona a coluna para armazenar a fatia de mercado (Market Share %)
+ALTER TABLE Fato_Mercado_Saude ADD MarketSharePct DECIMAL(5,2) NULL;
 GO

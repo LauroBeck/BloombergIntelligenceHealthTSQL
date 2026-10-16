@@ -1,35 +1,83 @@
--- Seed the master core security records
-INSERT INTO Dim_Security (TickerSymbol, CompanyName, ExchangeName, SectorName, IndustryName, IsNasdaq100)
-VALUES ('MSFT', 'Microsoft Corporation Common Stock', 'NASDAQ-GS', 'Technology', 'Computer Software: Prepackaged Software', 1);
+-- =========================================================================
+-- 1. CRIAÇÃO DAS TABELAS DE DIMENSÃO
+-- =========================================================================
 
-DECLARE @MSFT_ID INT = SCOPE_IDENTITY();
+CREATE TABLE Dim_Corporacao (
+    CorporacaoID INT IDENTITY(1,1) NOT NULL,
+    NomeCorporacao VARCHAR(100) NOT NULL,
+    ModeloNegocio VARCHAR(50) NOT NULL, 
+    TotalFarmaciasFisicas INT NOT NULL DEFAULT 0,
+    DataAtualizacao DATETIME NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT PK_Dim_Corporacao PRIMARY KEY CLUSTERED (CorporacaoID)
+);
 
--- Seed the historical core target ETFs
-INSERT INTO Dim_ETF (ETFTicker, ETFName) VALUES 
-('MSFU', 'Direxion Daily MSFT Bull 2X ETF'),
-('SUSL', 'iShares ESG MSCI USA Leaders ETF'),
-('IUSG', 'iShares Core S&P U.S. Growth ETF'),
-('GFGF', 'Guru Favorite Stocks ETF'),
-('TDIV', 'First Trust NASDAQ Technology Dividend Index Fund');
+CREATE TABLE Dim_Medicamento (
+    MedicamentoID INT IDENTITY(1,1) NOT NULL,
+    NomeMedicamento VARCHAR(150) NOT NULL,
+    TipoMedicamento VARCHAR(50) NOT NULL, 
+    IndicacaoClinica VARCHAR(250) NULL,
+    DosagemPadrao VARCHAR(50) NULL,
+    CONSTRAINT PK_Dim_Medicamento PRIMARY KEY CLUSTERED (MedicamentoID)
+);
 
--- Seed Fact: 9:52 AM snapshot metrics
-INSERT INTO Fact_Stock_Quote_Snapshot 
-(SecurityKey, SnapshotDateTime, LastPrice, PriceChange, PercentageChange, BidPrice, BidSize, AskPrice, AskSize, TotalShareVolume)
-VALUES 
-(@MSFT_ID, '2026-10-07 09:52:00', 527.1500, -2.1500, -0.0041, 527.0400, 87, 527.1500, 167, 1871927.434443);
+CREATE TABLE Dim_CanalAcesso (
+    CanalAcessoID INT IDENTITY(1,1) NOT NULL,
+    DescricaoCanal VARCHAR(100) NOT NULL, 
+    CONSTRAINT PK_Dim_CanalAcesso PRIMARY KEY CLUSTERED (CanalAcessoID)
+);
+GO
 
--- Seed Fact: Core analytical metrics
-INSERT INTO Fact_Market_Key_Data 
-(SecurityKey, AsOfDate, PreviousClose, TodayHigh, TodayLow, FiftyTwoWeekHigh, FiftyTwoWeekLow, MarketCap, AnnualizedDividend, CurrentYield, ExDividendDate, DividendPayDate, OneYearTargetPrice, AverageVolume)
-VALUES 
-(@MSFT_ID, '2026-10-07', 529.3000, 531.5900, 525.6830, 553.7200, 349.2000, 3913448112394.00, 3.6400, 0.0069, '2026-08-20', '2026-09-10', 575.0000, 27337999);
+-- =========================================================================
+-- 2. CRIAÇÃO DA TABELA DE FATOS
+-- =========================================================================
 
--- Seed Fact: Top 10 fund holdings weightings allocations
-INSERT INTO Fact_ETF_Holdings_Weight (ETFKey, SecurityKey, AsOfDate, PercentWeighting, HoldingRank)
-VALUES 
-((SELECT ETFKey FROM Dim_ETF WHERE ETFTicker='MSFU'), @MSFT_ID, '2026-10-07', 0.1958, 1),
-((SELECT ETFKey FROM Dim_ETF WHERE ETFTicker='SUSL'), @MSFT_ID, '2026-10-07', 0.1052, 2),
-((SELECT ETFKey FROM Dim_ETF WHERE ETFTicker='IUSG'), @MSFT_ID, '2026-10-07', 0.0988, 3),
-((SELECT ETFKey FROM Dim_ETF WHERE ETFTicker='GFGF'), @MSFT_ID, '2026-10-07', 0.0918, 4),
-((SELECT ETFKey FROM Dim_ETF WHERE ETFTicker='TDIV'), @MSFT_ID, '2026-10-07', 0.0823, 5);
+CREATE TABLE Fato_Mercado_Saude (
+    FatoID BIGINT IDENTITY(1,1) NOT NULL,
+    CorporacaoID INT NOT NULL,
+    MedicamentoID INT NOT NULL,
+    CanalAcessoID INT NOT NULL,
+    
+    -- Métricas populacionais em BIGINT (Essencial para contagens acima de 2 bilhões)
+    ConsumidoresAtendidosAnual BIGINT NULL, 
+    MembrosSeguroCore BIGINT NULL,          
+    
+    -- Valores monetários exatos
+    PrecoTabelaEstimado DECIMAL(18,2) NULL,
+    PrecoComDescontoCupom DECIMAL(18,2) NULL, 
+    VolumePrescricoesAnual BIGINT NULL,
+    
+    DataRegistro DATETIME NOT NULL,
+    CONSTRAINT PK_Fato_Mercado_Saude PRIMARY KEY CLUSTERED (FatoID)
+);
+GO
+
+-- =========================================================================
+-- 3. CRIAÇÃO DAS CHAVES ESTRANGEIRAS (FOREIGN KEYS)
+-- =========================================================================
+
+ALTER TABLE Fato_Mercado_Saude WITH CHECK 
+ADD CONSTRAINT FK_Fato_Corporacao FOREIGN KEY (CorporacaoID)
+REFERENCES Dim_Corporacao (CorporacaoID);
+
+ALTER TABLE Fato_Mercado_Saude WITH CHECK 
+ADD CONSTRAINT FK_Fato_Medicamento FOREIGN KEY (MedicamentoID)
+REFERENCES Dim_Medicamento (MedicamentoID);
+
+ALTER TABLE Fato_Mercado_Saude WITH CHECK 
+ADD CONSTRAINT FK_Fato_CanalAcesso FOREIGN KEY (CanalAcessoID)
+REFERENCES Dim_CanalAcesso (CanalAcessoID);
+GO
+
+-- =========================================================================
+-- 4. OTIMIZAÇÃO DE PERFORMANCE (Índices Não-Clusterizados para 2005/2008)
+-- =========================================================================
+
+-- Índices nas chaves estrangeiras da tabela de fatos para acelerar consultas com JOIN
+CREATE NONCLUSTERED INDEX IX_Fato_BuscaGeral 
+ON Fato_Mercado_Saude (CorporacaoID, MedicamentoID, CanalAcessoID);
+
+-- No SQL Server 2005/2008, o uso da cláusula INCLUDE melhora a performance de cobertura de índice
+CREATE NONCLUSTERED INDEX IX_Dim_Medicamento_Busca 
+ON Dim_Medicamento (TipoMedicamento) 
+INCLUDE (NomeMedicamento);
 GO
